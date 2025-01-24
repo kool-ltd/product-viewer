@@ -1,11 +1,3 @@
-import * as THREE from 'three';
-import { VRButton } from 'three/addons/webxr/VRButton.js';
-import { ARButton } from 'three/addons/webxr/ARButton.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-import { DragControls } from 'three/addons/controls/DragControls.js';
-
 class App {
     constructor() {
         this.init();
@@ -58,11 +50,11 @@ class App {
     }
 
     setupControls() {
-        this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.orbitControls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
         this.orbitControls.enableDamping = true;
         this.orbitControls.dampingFactor = 0.05;
 
-        this.dragControls = new DragControls([], this.camera, this.renderer.domElement);
+        this.dragControls = new THREE.DragControls([], this.camera, this.renderer.domElement);
         
         this.dragControls.addEventListener('dragstart', () => {
             this.orbitControls.enabled = false;
@@ -80,46 +72,60 @@ class App {
         });
     }
 
-    async loadEnvironment() {
-        const rgbeLoader = new RGBELoader();
-        try {
-            const envMap = await rgbeLoader.loadAsync('./assets/brown_photostudio_02_4k.hdr');
-            this.scene.environment = envMap;
-            this.scene.background = envMap;
-        } catch (error) {
-            console.error('Error loading environment map:', error);
-        }
+    loadEnvironment() {
+        const rgbeLoader = new THREE.RGBELoader();
+        rgbeLoader.setDataType(THREE.UnsignedByteType);
+        rgbeLoader.load('./assets/brown_photostudio_02_4k.hdr', 
+            (texture) => {
+                const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+                const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+                this.scene.environment = envMap;
+                this.scene.background = envMap;
+                texture.dispose();
+                pmremGenerator.dispose();
+            },
+            undefined,
+            (error) => {
+                console.error('Error loading environment map:', error);
+            }
+        );
     }
 
-    async loadModel(url, name) {
-        const loader = new GLTFLoader();
-        try {
-            const gltf = await loader.loadAsync(url);
-            const model = gltf.scene;
-            
-            // Store original scale
-            model.userData.originalScale = model.scale.clone();
-            
-            // Add to scene and store reference
-            this.scene.add(model);
-            this.loadedModels.set(name, model);
-            
-            // Update drag controls
-            this.dragControls.dispose();
-            this.dragControls = new DragControls(
-                Array.from(this.loadedModels.values()),
-                this.camera,
-                this.renderer.domElement
+    loadModel(url, name) {
+        return new Promise((resolve, reject) => {
+            const loader = new THREE.GLTFLoader();
+            loader.load(url, 
+                (gltf) => {
+                    const model = gltf.scene;
+                    
+                    // Store original scale
+                    model.userData.originalScale = model.scale.clone();
+                    
+                    // Add to scene and store reference
+                    this.scene.add(model);
+                    this.loadedModels.set(name, model);
+                    
+                    // Update drag controls
+                    this.dragControls.dispose();
+                    this.dragControls = new THREE.DragControls(
+                        Array.from(this.loadedModels.values()),
+                        this.camera,
+                        this.renderer.domElement
+                    );
+                    this.setupControls();
+
+                    resolve(model);
+                },
+                undefined,
+                (error) => {
+                    console.error('Error loading model:', error);
+                    reject(error);
+                }
             );
-            this.setupControls();
-
-            return model;
-        } catch (error) {
-            console.error('Error loading model:', error);
-        }
+        });
     }
 
-    async loadDefaultModels() {
+    loadDefaultModels() {
         const models = [
             { url: './assets/kool-mandoline-blade.glb', name: 'blade' },
             { url: './assets/kool-mandoline-frame.glb', name: 'frame' },
@@ -127,9 +133,9 @@ class App {
             { url: './assets/kool-mandoline-handletpe.glb', name: 'handle' }
         ];
 
-        for (const model of models) {
-            await this.loadModel(model.url, model.name);
-        }
+        models.forEach(model => {
+            this.loadModel(model.url, model.name);
+        });
     }
 
     setupEventListeners() {
@@ -159,18 +165,4 @@ class App {
     onWindowResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    animate() {
-        this.renderer.setAnimationLoop(() => {
-            this.orbitControls.update();
-            this.renderer.render(this.scene, this.camera);
-        });
-    }
-}
-
-// Start the application
-const app = new App();
-// Load default models
-app.loadDefaultModels();
+        this.renderer.
