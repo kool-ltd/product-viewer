@@ -19,6 +19,14 @@ class App {
         this.animate();
     }
 
+    onWindowResize() {
+        if (this.camera && this.renderer) {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    }
+
     init() {
         this.container = document.getElementById('scene-container');
         this.scene = new THREE.Scene();
@@ -39,17 +47,7 @@ class App {
         this.renderer.xr.enabled = true;
         this.container.appendChild(this.renderer.domElement);
 
-        // Bind the resize handler
-        this.onWindowResize = this.onWindowResize.bind(this);
-        window.addEventListener('resize', this.onWindowResize);
-    }
-
-    onWindowResize() {
-        if (this.camera && this.renderer) {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        window.addEventListener('resize', this.onWindowResize.bind(this));
     }
 
     setupScene() {
@@ -89,11 +87,16 @@ class App {
             const arButton = ARButton.createButton(this.renderer, {
                 requiredFeatures: ['hit-test'],
                 optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.body }
             });
             document.body.appendChild(arButton);
 
-            arButton.addEventListener('click', () => {
-                this.isARMode = !this.isARMode;
+            this.renderer.xr.addEventListener('sessionstart', () => {
+                this.isARMode = true;
+            });
+
+            this.renderer.xr.addEventListener('sessionend', () => {
+                this.isARMode = false;
             });
         }
     }
@@ -118,6 +121,8 @@ class App {
         uploadButton.onclick = () => fileInput.click();
 
         fileInput.onchange = (event) => {
+            this.clearExistingModels();
+            
             const files = event.target.files;
             for (let file of files) {
                 const url = URL.createObjectURL(file);
@@ -129,6 +134,17 @@ class App {
         uploadContainer.appendChild(uploadButton);
         uploadContainer.appendChild(fileInput);
         document.body.appendChild(uploadContainer);
+    }
+
+    clearExistingModels() {
+        this.loadedModels.forEach(model => {
+            this.scene.remove(model);
+        });
+        
+        this.loadedModels.clear();
+        this.draggableObjects.length = 0;
+        
+        this.updateDragControls();
     }
 
     loadModel(url, name) {
@@ -144,10 +160,7 @@ class App {
                 this.loadedModels.set(name, model);
                 
                 this.updateDragControls();
-
-                if (this.loadedModels.size === 4) {
-                    this.fitCameraToScene();
-                }
+                this.fitCameraToScene();
 
                 console.log(`Loaded model: ${name}`);
             },
@@ -158,6 +171,17 @@ class App {
                 console.error(`Error loading model ${name}:`, error);
             }
         );
+    }
+
+    updateDragControls() {
+        const draggableObjects = Array.from(this.loadedModels.values());
+        
+        if (this.dragControls) {
+            this.dragControls.dispose();
+        }
+
+        this.dragControls = new DragControls(draggableObjects, this.camera, this.renderer.domElement);
+        this.setupControlsEventListeners();
     }
 
     fitCameraToScene() {
@@ -175,17 +199,6 @@ class App {
         this.orbitControls.target.copy(center);
         this.camera.updateProjectionMatrix();
         this.orbitControls.update();
-    }
-
-    updateDragControls() {
-        const draggableObjects = Array.from(this.loadedModels.values());
-        
-        if (this.dragControls) {
-            this.dragControls.dispose();
-        }
-
-        this.dragControls = new DragControls(draggableObjects, this.camera, this.renderer.domElement);
-        this.setupControlsEventListeners();
     }
 
     loadDefaultModels() {
