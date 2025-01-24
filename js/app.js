@@ -52,16 +52,13 @@ class App {
     }
 
     setupScene() {
-        // Start with gray background for normal viewing
         this.scene.background = new THREE.Color(0xcccccc);
 
-        // Load HDR environment map
         const rgbeLoader = new RGBELoader();
-        rgbeLoader.load('https://raw.githubusercontent.com/kool-ltd/product-viewer/refs/heads/main/assets/brown_photostudio_02_4k.hdr', (texture) => {
+        rgbeLoader.load('https://github.com/kool-ltd/product-viewer/raw/refs/heads/main/assets/brown_photostudio_02_4k.hdr', (texture) => {
             texture.mapping = THREE.EquirectangularReflectionMapping;
             this.scene.environment = texture;
             
-            // Enable physical materials rendering
             this.renderer.physicallyCorrectLights = true;
             this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
             this.renderer.toneMappingExposure = 1;
