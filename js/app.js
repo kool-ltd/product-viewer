@@ -94,6 +94,81 @@ class App {
 
         this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
         this.setupControlsEventListeners();
+
+        // Add touch interaction for AR mode
+        this.renderer.domElement.addEventListener('touchstart', (event) => {
+            if (!this.isARMode) return;
+            
+            event.preventDefault();
+            
+            const touch = event.touches[0];
+            const mouse = new THREE.Vector2();
+            
+            // Convert touch coordinates to normalized device coordinates (-1 to +1)
+            mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+            
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, this.camera);
+            
+            const intersects = raycaster.intersectObjects(this.draggableObjects, true);
+            
+            if (intersects.length > 0) {
+                const selectedObject = intersects[0].object;
+                let targetObject = selectedObject;
+                
+                // Find the root object (the loaded GLB)
+                while (targetObject.parent && targetObject.parent !== this.scene) {
+                    targetObject = targetObject.parent;
+                }
+                
+                // Store the selected object and its initial position
+                this.selectedObject = targetObject;
+                this.initialTouchX = touch.clientX;
+                this.initialTouchY = touch.clientY;
+                this.initialObjectPosition = targetObject.position.clone();
+            }
+        });
+
+        this.renderer.domElement.addEventListener('touchmove', (event) => {
+            if (!this.isARMode || !this.selectedObject) return;
+            
+            event.preventDefault();
+            
+            const touch = event.touches[0];
+            const deltaX = (touch.clientX - this.initialTouchX) * 0.01;
+            const deltaY = (touch.clientY - this.initialTouchY) * 0.01;
+            
+            // Move the object in the camera's plane
+            const cameraRight = new THREE.Vector3();
+            const cameraUp = new THREE.Vector3();
+            this.camera.getWorldDirection(cameraRight);
+            cameraRight.cross(this.camera.up).normalize();
+            cameraUp.copy(this.camera.up);
+            
+            this.selectedObject.position.copy(this.initialObjectPosition);
+            this.selectedObject.position.add(cameraRight.multiplyScalar(-deltaX));
+            this.selectedObject.position.add(cameraUp.multiplyScalar(-deltaY));
+        });
+
+        this.renderer.domElement.addEventListener('touchend', () => {
+            if (!this.isARMode) return;
+            this.selectedObject = null;
+        });
+    }
+
+    setupControlsEventListeners() {
+        this.dragControls.addEventListener('dragstart', () => {
+            if (!this.isARMode) {
+                this.orbitControls.enabled = false;
+            }
+        });
+
+        this.dragControls.addEventListener('dragend', () => {
+            if (!this.isARMode) {
+                this.orbitControls.enabled = true;
+            }
+        });
     }
 
     setupControlsEventListeners() {
