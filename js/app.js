@@ -75,7 +75,7 @@ class App {
     loadEnvironment() {
         const rgbeLoader = new THREE.RGBELoader();
         rgbeLoader.setDataType(THREE.UnsignedByteType);
-        rgbeLoader.load('./assets/brown_photostudio_02_4k.hdr', 
+        rgbeLoader.load('https://raw.githubusercontent.com/kool-ltd/product-viewer/refs/heads/main/assets/brown_photostudio_02_4k.hdr', 
             (texture) => {
                 const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
                 const envMap = pmremGenerator.fromEquirectangular(texture).texture;
