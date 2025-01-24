@@ -61,7 +61,7 @@ class App {
             
             this.renderer.physicallyCorrectLights = true;
             this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            this.renderer.toneMappingExposure = 1;
+            this.renderer.toneMappingExposure = 0.7;
             this.renderer.outputEncoding = THREE.sRGBEncoding;
         });
     }
