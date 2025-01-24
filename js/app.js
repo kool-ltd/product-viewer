@@ -28,6 +28,15 @@ class App {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.container.appendChild(this.renderer.domElement);
+
+        // Add window resize handler
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+    }
+
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
     setupScene() {
@@ -45,7 +54,11 @@ class App {
 
     setupControls() {
         this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.dragControls = new DragControls([], this.camera, this.renderer.domElement);
+        this.orbitControls.enableDamping = true;
+        this.orbitControls.dampingFactor = 0.05;
+
+        const objects = Array.from(this.loadedModels.values());
+        this.dragControls = new DragControls(objects, this.camera, this.renderer.domElement);
         
         this.dragControls.addEventListener('dragstart', () => {
             this.orbitControls.enabled = false;
@@ -58,15 +71,20 @@ class App {
 
     loadModel(url, name) {
         const loader = new GLTFLoader();
-        loader.load(url, 
+        loader.load(
+            url, 
             (gltf) => {
                 const model = gltf.scene;
+                
+                // Center the model
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                model.position.sub(center);
+                
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
                 
-                // Update drag controls
-                const objects = Array.from(this.loadedModels.values());
-                this.dragControls = new DragControls(objects, this.camera, this.renderer.domElement);
+                // Update drag controls with new objects
                 this.setupControls();
 
                 console.log(`Loaded model: ${name}`);
@@ -103,6 +121,9 @@ class App {
     }
 }
 
-// Start the application
+// Create instance of the application
 const app = new App();
 app.loadDefaultModels();
+
+// Export the app instance if needed
+export default app;
