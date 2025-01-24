@@ -5,12 +5,15 @@ import { DragControls } from 'three/addons/controls/DragControls.js';
 
 class App {
     constructor() {
+        // Initialize collections first
+        this.loadedModels = new Map();
+        this.draggableObjects = [];
+
         this.init();
         this.setupScene();
         this.setupLights();
-        this.setupControls();
+        this.setupInitialControls(); // Renamed to indicate initial setup
         this.animate();
-        this.loadedModels = new Map();
     }
 
     init() {
@@ -29,7 +32,6 @@ class App {
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.container.appendChild(this.renderer.domElement);
 
-        // Add window resize handler
         window.addEventListener('resize', this.onWindowResize.bind(this));
     }
 
@@ -52,14 +54,19 @@ class App {
         this.scene.add(directionalLight);
     }
 
-    setupControls() {
+    setupInitialControls() {
+        // Setup orbit controls
         this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
         this.orbitControls.enableDamping = true;
         this.orbitControls.dampingFactor = 0.05;
 
-        const objects = Array.from(this.loadedModels.values());
-        this.dragControls = new DragControls(objects, this.camera, this.renderer.domElement);
+        // Setup drag controls with empty array initially
+        this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
         
+        this.setupControlsEventListeners();
+    }
+
+    setupControlsEventListeners() {
         this.dragControls.addEventListener('dragstart', () => {
             this.orbitControls.enabled = false;
         });
@@ -67,6 +74,20 @@ class App {
         this.dragControls.addEventListener('dragend', () => {
             this.orbitControls.enabled = true;
         });
+    }
+
+    updateDragControls() {
+        // Update draggable objects array
+        this.draggableObjects = Array.from(this.loadedModels.values());
+        
+        // Dispose old drag controls
+        if (this.dragControls) {
+            this.dragControls.dispose();
+        }
+
+        // Create new drag controls with updated objects
+        this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
+        this.setupControlsEventListeners();
     }
 
     loadModel(url, name) {
@@ -85,7 +106,7 @@ class App {
                 this.loadedModels.set(name, model);
                 
                 // Update drag controls with new objects
-                this.setupControls();
+                this.updateDragControls();
 
                 console.log(`Loaded model: ${name}`);
             },
