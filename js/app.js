@@ -106,25 +106,6 @@ class App {
         });
     }
 
-    setupARButton() {
-        if ('xr' in navigator) {
-            const arButton = ARButton.createButton(this.renderer, {
-                requiredFeatures: ['hit-test'],
-                optionalFeatures: ['dom-overlay'],
-                domOverlay: { root: document.body }
-            });
-            document.body.appendChild(arButton);
-
-            this.renderer.xr.addEventListener('sessionstart', () => {
-                this.isARMode = true;
-            });
-
-            this.renderer.xr.addEventListener('sessionend', () => {
-                this.isARMode = false;
-            });
-        }
-    }
-
     setupFileUpload() {
         const uploadContainer = document.createElement('div');
         uploadContainer.style.position = 'fixed';
