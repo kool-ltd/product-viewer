@@ -1,3 +1,8 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DragControls } from 'three/addons/controls/DragControls.js';
+
 class App {
     constructor() {
         this.init();
@@ -39,8 +44,8 @@ class App {
     }
 
     setupControls() {
-        this.orbitControls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
-        this.dragControls = new THREE.DragControls([], this.camera, this.renderer.domElement);
+        this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.dragControls = new DragControls([], this.camera, this.renderer.domElement);
         
         this.dragControls.addEventListener('dragstart', () => {
             this.orbitControls.enabled = false;
@@ -52,7 +57,7 @@ class App {
     }
 
     loadModel(url, name) {
-        const loader = new THREE.GLTFLoader();
+        const loader = new GLTFLoader();
         loader.load(url, 
             (gltf) => {
                 const model = gltf.scene;
@@ -61,7 +66,7 @@ class App {
                 
                 // Update drag controls
                 const objects = Array.from(this.loadedModels.values());
-                this.dragControls = new THREE.DragControls(objects, this.camera, this.renderer.domElement);
+                this.dragControls = new DragControls(objects, this.camera, this.renderer.domElement);
                 this.setupControls();
 
                 console.log(`Loaded model: ${name}`);
