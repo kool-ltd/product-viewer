@@ -79,41 +79,55 @@ class App {
         this.scene.add(this.reticle);
     }
 
-    setupARButton() {
-        if ('xr' in navigator) {
-            const arButton = ARButton.createButton(this.renderer, {
-                requiredFeatures: ['hit-test'],
-                optionalFeatures: ['dom-overlay'],
-                domOverlay: { root: document.body }
-            });
-            document.body.appendChild(arButton);
+setupARButton() {
+    if ('xr' in navigator) {
+        const arButton = ARButton.createButton(this.renderer, {
+            requiredFeatures: ['hit-test'],
+            optionalFeatures: ['dom-overlay'],
+            domOverlay: { root: document.body }
+        });
+        document.body.appendChild(arButton);
 
-            this.renderer.xr.addEventListener('sessionstart', () => {
-                this.isARMode = true;
-                this.scene.background = null;
-                this.modelPlaced = false;
+        this.renderer.xr.addEventListener('sessionstart', () => {
+            this.isARMode = true;
+            this.scene.background = null;
+            this.modelPlaced = false;
+            // Hide all models when entering AR
+            this.loadedModels.forEach(model => {
+                model.visible = false;
             });
+        });
 
-            this.renderer.xr.addEventListener('sessionend', () => {
-                this.isARMode = false;
-                this.scene.background = new THREE.Color(0xcccccc);
-                this.modelPlaced = false;
+        this.renderer.xr.addEventListener('sessionend', () => {
+            this.isARMode = false;
+            this.scene.background = new THREE.Color(0xcccccc);
+            this.modelPlaced = false;
+            // Show all models when exiting AR
+            this.loadedModels.forEach(model => {
+                model.visible = true;
             });
+        });
 
-            // Add touch listener for model placement
-            this.renderer.domElement.addEventListener('select', (event) => {
-                if (this.reticle.visible && !this.modelPlaced) {
-                    // Place all models at the reticle's position
-                    this.loadedModels.forEach(model => {
-                        model.position.setFromMatrixPosition(this.reticle.matrix);
-                        model.visible = true;
-                    });
-                    this.modelPlaced = true;
-                    this.reticle.visible = false;
-                }
-            });
-        }
+        // Add touch event listener for AR placement
+        this.renderer.domElement.addEventListener('touchstart', (event) => {
+            if (this.isARMode && this.reticle.visible && !this.modelPlaced) {
+                event.preventDefault();
+                
+                // Place all models at the reticle's position
+                const matrix = new THREE.Matrix4();
+                matrix.fromArray(this.reticle.matrix.elements);
+                
+                this.loadedModels.forEach(model => {
+                    model.position.setFromMatrixPosition(matrix);
+                    model.visible = true;
+                });
+                
+                this.modelPlaced = true;
+                this.reticle.visible = false;
+            }
+        });
     }
+}
 
     async initializeARHitTesting() {
         const session = this.renderer.xr.getSession();
@@ -266,17 +280,15 @@ class App {
                 model.userData.isDraggable = true;
                 this.draggableObjects.push(model);
                 
+                // Set initial visibility based on AR mode
+                model.visible = !this.isARMode;
+                
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
                 
-                // Hide model initially in AR mode
-                if (this.isARMode) {
-                    model.visible = false;
-                }
-                
                 this.updateDragControls();
                 this.fitCameraToScene();
-
+    
                 console.log(`Loaded model: ${name}`);
             },
             (xhr) => {
@@ -338,15 +350,15 @@ class App {
                     });
                     this.hitTestSourceRequested = true;
                 }
-
+    
                 if (this.hitTestSource && !this.modelPlaced) {
                     const referenceSpace = this.renderer.xr.getReferenceSpace();
                     const hitTestResults = frame.getHitTestResults(this.hitTestSource);
-
-                    if (hitTestResults.length) {
+    
+                    if (hitTestResults.length > 0) {
                         const hit = hitTestResults[0];
                         const hitPose = hit.getPose(referenceSpace);
-
+                        
                         this.reticle.visible = true;
                         this.reticle.matrix.fromArray(hitPose.transform.matrix);
                     } else {
@@ -354,7 +366,7 @@ class App {
                     }
                 }
             }
-
+    
             if (this.isARMode) {
                 this.renderer.render(this.scene, this.camera);
             } else {
@@ -363,7 +375,6 @@ class App {
             }
         });
     }
-}
 
 const app = new App();
 app.loadDefaultModels();
