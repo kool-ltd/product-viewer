@@ -10,6 +10,11 @@ class App {
         this.loadedModels = new Map();
         this.draggableObjects = [];
         this.isARMode = false;
+        this.controller = null;
+        this.reticle = null;
+        this.hitTestSource = null;
+        this.hitTestSourceRequested = false;
+        this.modelPlaced = false;
 
         this.init();
         this.setupScene();
@@ -64,6 +69,14 @@ class App {
             this.renderer.toneMappingExposure = 0.7;
             this.renderer.outputEncoding = THREE.sRGBEncoding;
         });
+
+        // Create reticle
+        const geometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
+        const material = new THREE.MeshBasicMaterial();
+        this.reticle = new THREE.Mesh(geometry, material);
+        this.reticle.visible = false;
+        this.reticle.matrixAutoUpdate = false;
+        this.scene.add(this.reticle);
     }
 
     setupARButton() {
@@ -75,18 +88,38 @@ class App {
             });
             document.body.appendChild(arButton);
 
-            // Remove background when entering AR
             this.renderer.xr.addEventListener('sessionstart', () => {
                 this.isARMode = true;
-                this.scene.background = null;  // Remove background in AR
+                this.scene.background = null;
+                this.modelPlaced = false;
             });
 
-            // Restore background when exiting AR
             this.renderer.xr.addEventListener('sessionend', () => {
                 this.isARMode = false;
-                this.scene.background = new THREE.Color(0xcccccc);  // Restore gray background
+                this.scene.background = new THREE.Color(0xcccccc);
+                this.modelPlaced = false;
+            });
+
+            // Add touch listener for model placement
+            this.renderer.domElement.addEventListener('select', (event) => {
+                if (this.reticle.visible && !this.modelPlaced) {
+                    // Place all models at the reticle's position
+                    this.loadedModels.forEach(model => {
+                        model.position.setFromMatrixPosition(this.reticle.matrix);
+                        model.visible = true;
+                    });
+                    this.modelPlaced = true;
+                    this.reticle.visible = false;
+                }
             });
         }
+    }
+
+    async initializeARHitTesting() {
+        const session = this.renderer.xr.getSession();
+        const viewerSpace = await session.requestReferenceSpace('viewer');
+        const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+        return hitTestSource;
     }
 
     setupLights() {
@@ -115,7 +148,6 @@ class App {
             const touch = event.touches[0];
             const mouse = new THREE.Vector2();
             
-            // Convert touch coordinates to normalized device coordinates (-1 to +1)
             mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
             
@@ -128,12 +160,10 @@ class App {
                 const selectedObject = intersects[0].object;
                 let targetObject = selectedObject;
                 
-                // Find the root object (the loaded GLB)
                 while (targetObject.parent && targetObject.parent !== this.scene) {
                     targetObject = targetObject.parent;
                 }
                 
-                // Store the selected object and its initial position
                 this.selectedObject = targetObject;
                 this.initialTouchX = touch.clientX;
                 this.initialTouchY = touch.clientY;
@@ -150,7 +180,6 @@ class App {
             const deltaX = (touch.clientX - this.initialTouchX) * 0.01;
             const deltaY = (touch.clientY - this.initialTouchY) * 0.01;
             
-            // Move the object in the camera's plane
             const cameraRight = new THREE.Vector3();
             const cameraUp = new THREE.Vector3();
             this.camera.getWorldDirection(cameraRight);
@@ -179,16 +208,6 @@ class App {
             if (!this.isARMode) {
                 this.orbitControls.enabled = true;
             }
-        });
-    }
-
-    setupControlsEventListeners() {
-        this.dragControls.addEventListener('dragstart', () => {
-            this.orbitControls.enabled = false;
-        });
-
-        this.dragControls.addEventListener('dragend', () => {
-            this.orbitControls.enabled = true;
         });
     }
 
@@ -250,6 +269,11 @@ class App {
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
                 
+                // Hide model initially in AR mode
+                if (this.isARMode) {
+                    model.visible = false;
+                }
+                
                 this.updateDragControls();
                 this.fitCameraToScene();
 
@@ -306,7 +330,31 @@ class App {
     }
 
     animate() {
-        this.renderer.setAnimationLoop(() => {
+        this.renderer.setAnimationLoop((timestamp, frame) => {
+            if (this.isARMode && frame) {
+                if (!this.hitTestSourceRequested) {
+                    this.initializeARHitTesting().then(source => {
+                        this.hitTestSource = source;
+                    });
+                    this.hitTestSourceRequested = true;
+                }
+
+                if (this.hitTestSource && !this.modelPlaced) {
+                    const referenceSpace = this.renderer.xr.getReferenceSpace();
+                    const hitTestResults = frame.getHitTestResults(this.hitTestSource);
+
+                    if (hitTestResults.length) {
+                        const hit = hitTestResults[0];
+                        const hitPose = hit.getPose(referenceSpace);
+
+                        this.reticle.visible = true;
+                        this.reticle.matrix.fromArray(hitPose.transform.matrix);
+                    } else {
+                        this.reticle.visible = false;
+                    }
+                }
+            }
+
             if (this.isARMode) {
                 this.renderer.render(this.scene, this.camera);
             } else {
