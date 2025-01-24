@@ -13,6 +13,7 @@ class App {
         this.selectedObject = null;
         this.controllers = [];
         this.controllerGrips = [];
+        this.hasPlacedModel = false;
 
         this.init();
         this.setupScene();
@@ -79,13 +80,11 @@ class App {
             });
             document.body.appendChild(arButton);
 
-            // Setup controllers
             this.setupControllers();
 
-            // Hit-test indicator (make it more visible)
             const geometry = new THREE.RingGeometry(0.15, 0.2, 32);
             const material = new THREE.MeshBasicMaterial({ 
-                color: 0x00ff00,  // Bright green color
+                color: 0x00ff00,
                 opacity: 0.8,
                 transparent: true,
                 side: THREE.DoubleSide
@@ -96,24 +95,20 @@ class App {
             this.reticle.rotateX(-Math.PI / 2);
             this.scene.add(this.reticle);
 
-            // Make reticle always face the camera
-            this.reticle.renderOrder = 1;  // Ensure it renders on top
-            
-            // Session start/end handlers
             this.renderer.xr.addEventListener('sessionstart', () => {
                 this.isARMode = true;
                 this.scene.background = null;
+                this.hasPlacedModel = false;
                 
-                // Don't hide models immediately in AR mode
                 this.loadedModels.forEach(model => {
-                    model.position.set(0, 0, -2); // Position in front of the user
-                    model.visible = true;
+                    model.visible = false;
                 });
             });
 
             this.renderer.xr.addEventListener('sessionend', () => {
                 this.isARMode = false;
                 this.scene.background = new THREE.Color(0xcccccc);
+                this.hasPlacedModel = false;
                 this.loadedModels.forEach(model => {
                     model.visible = true;
                 });
@@ -122,19 +117,16 @@ class App {
     }
 
     setupControllers() {
-        // Controller 1
         this.controller1 = this.renderer.xr.getController(0);
         this.controller1.addEventListener('selectstart', () => this.onControllerSelectStart(this.controller1));
         this.controller1.addEventListener('selectend', () => this.onControllerSelectEnd(this.controller1));
         this.scene.add(this.controller1);
 
-        // Controller 2
         this.controller2 = this.renderer.xr.getController(1);
         this.controller2.addEventListener('selectstart', () => this.onControllerSelectStart(this.controller2));
         this.controller2.addEventListener('selectend', () => this.onControllerSelectEnd(this.controller2));
         this.scene.add(this.controller2);
 
-        // Controller visual indicators
         const controllerGeometry = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(0, 0, 0),
             new THREE.Vector3(0, 0, -1)
@@ -151,38 +143,6 @@ class App {
         this.controller2.add(controllerLine.clone());
     }
 
-    onControllerSelectStart(controller) {
-        if (this.reticle.visible) {
-            this.loadedModels.forEach(model => {
-                model.position.setFromMatrixPosition(this.reticle.matrix);
-                model.visible = true;
-            });
-        }
-
-        // Raycasting for object manipulation
-        const tempMatrix = new THREE.Matrix4();
-        tempMatrix.identity().extractRotation(controller.matrixWorld);
-
-        const raycaster = new THREE.Raycaster();
-        raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-        raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-
-        const intersects = raycaster.intersectObjects(Array.from(this.loadedModels.values()), true);
-        
-        if (intersects.length > 0) {
-            this.selectedObject = intersects[0].object;
-            controller.userData.selectedObject = this.selectedObject;
-            controller.userData.initialPosition = this.selectedObject.position.clone();
-            controller.userData.initialControllerPosition = controller.position.clone();
-        }
-    }
-
-    onControllerSelectEnd(controller) {
-        if (controller.userData.selectedObject) {
-            controller.userData.selectedObject = null;
-        }
-    }
-
     setupLights() {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
@@ -192,7 +152,7 @@ class App {
         this.scene.add(directionalLight);
     }
 
-    setupInitialControls() {
+setupInitialControls() {
         this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
         this.orbitControls.enableDamping = true;
         this.orbitControls.dampingFactor = 0.05;
@@ -217,7 +177,7 @@ class App {
         let isMoving = false;
 
         this.renderer.domElement.addEventListener('touchstart', (event) => {
-            if (!this.isARMode) return;
+            if (!this.isARMode || !this.hasPlacedModel) return;
             
             if (event.touches.length === 1) {
                 startX = event.touches[0].pageX;
@@ -230,7 +190,7 @@ class App {
         });
 
         this.renderer.domElement.addEventListener('touchmove', (event) => {
-            if (!this.isARMode) return;
+            if (!this.isARMode || !this.hasPlacedModel) return;
             
             if (isMoving && event.touches.length === 1) {
                 const deltaX = (event.touches[0].pageX - startX) * 0.01;
@@ -265,6 +225,49 @@ class App {
             isMoving = false;
             isRotating = false;
         });
+    }
+
+    onControllerSelectStart(controller) {
+        if (this.isARMode && this.reticle.visible && !this.hasPlacedModel) {
+            const matrix = new THREE.Matrix4();
+            matrix.copyPosition(this.reticle.matrix);
+
+            const position = new THREE.Vector3();
+            this.reticle.getWorldPosition(position);
+            const distance = position.distanceTo(this.camera.position);
+            const scale = distance * 0.2; // Adjust this multiplier to change relative size
+
+            this.loadedModels.forEach(model => {
+                model.position.setFromMatrixPosition(this.reticle.matrix);
+                model.scale.set(scale, scale, scale);
+                model.visible = true;
+            });
+
+            this.hasPlacedModel = true;
+            this.reticle.visible = false;
+        }
+
+        if (this.hasPlacedModel) {
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+            const intersects = raycaster.intersectObjects(Array.from(this.loadedModels.values()), true);
+            
+            if (intersects.length > 0) {
+                this.selectedObject = intersects[0].object;
+                controller.userData.selectedObject = this.selectedObject;
+                controller.userData.initialPosition = this.selectedObject.position.clone();
+                controller.userData.initialControllerPosition = controller.position.clone();
+            }
+        }
+    }
+
+    onControllerSelectEnd(controller) {
+        controller.userData.selectedObject = null;
     }
 
     setupFileUpload() {
@@ -322,11 +325,9 @@ class App {
                 model.userData.isDraggable = true;
                 this.draggableObjects.push(model);
                 
-                // Scale the model up significantly for VR/AR
-                model.scale.set(5, 5, 5); // Adjust this value as needed (try values between 1-10)
-                
-                // Position the model at a reasonable height in VR/AR
-                model.position.set(0, 0, -2); // Adjust these values as needed
+                if (!this.isARMode) {
+                    model.scale.set(1, 1, 1);
+                }
                 
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
@@ -391,7 +392,7 @@ class App {
         let hitTestSource = null;
 
         this.renderer.setAnimationLoop((timestamp, frame) => {
-            if (this.isARMode && frame) {
+            if (this.isARMode && frame && !this.hasPlacedModel) {
                 if (!hitTestSourceRequested) {
                     const session = frame.session;
                     session.requestReferenceSpace('viewer').then((referenceSpace) => {
@@ -417,23 +418,6 @@ class App {
                     } else {
                         this.reticle.visible = false;
                     }
-                }
-
-                // Update controller interaction
-                if (this.controller1.userData.selectedObject) {
-                    const object = this.controller1.userData.selectedObject;
-                    const controller = this.controller1;
-                    const delta = controller.position.clone()
-                        .sub(controller.userData.initialControllerPosition);
-                    object.position.copy(controller.userData.initialPosition).add(delta);
-                }
-
-                if (this.controller2.userData.selectedObject) {
-                    const object = this.controller2.userData.selectedObject;
-                    const controller = this.controller2;
-                    const delta = controller.position.clone()
-                        .sub(controller.userData.initialControllerPosition);
-                    object.position.copy(controller.userData.initialPosition).add(delta);
                 }
             }
 
