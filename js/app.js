@@ -82,21 +82,32 @@ class App {
             // Setup controllers
             this.setupControllers();
 
-            // Hit-test indicator
+            // Hit-test indicator (make it more visible)
             const geometry = new THREE.RingGeometry(0.15, 0.2, 32);
-            const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x00ff00,  // Bright green color
+                opacity: 0.8,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
             this.reticle = new THREE.Mesh(geometry, material);
             this.reticle.matrixAutoUpdate = false;
             this.reticle.visible = false;
             this.reticle.rotateX(-Math.PI / 2);
             this.scene.add(this.reticle);
 
+            // Make reticle always face the camera
+            this.reticle.renderOrder = 1;  // Ensure it renders on top
+            
             // Session start/end handlers
             this.renderer.xr.addEventListener('sessionstart', () => {
                 this.isARMode = true;
                 this.scene.background = null;
+                
+                // Don't hide models immediately in AR mode
                 this.loadedModels.forEach(model => {
-                    model.visible = false;
+                    model.position.set(0, 0, -2); // Position in front of the user
+                    model.visible = true;
                 });
             });
 
@@ -311,6 +322,12 @@ class App {
                 model.userData.isDraggable = true;
                 this.draggableObjects.push(model);
                 
+                // Scale the model up significantly for VR/AR
+                model.scale.set(5, 5, 5); // Adjust this value as needed (try values between 1-10)
+                
+                // Position the model at a reasonable height in VR/AR
+                model.position.set(0, 0, -2); // Adjust these values as needed
+                
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
                 
@@ -370,48 +387,53 @@ class App {
     }
 
     animate() {
+        let hitTestSourceRequested = false;
+        let hitTestSource = null;
+
         this.renderer.setAnimationLoop((timestamp, frame) => {
             if (this.isARMode && frame) {
-                const referenceSpace = this.renderer.xr.getReferenceSpace();
-                const session = this.renderer.xr.getSession();
-
-                if (session) {
-                    session.requestReferenceSpace('viewer').then((viewerSpace) => {
-                        session.requestHitTestSource({ space: viewerSpace }).then((hitTestSource) => {
-                            if (frame) {
-                                const hitTestResults = frame.getHitTestResults(hitTestSource);
-
-                                if (hitTestResults.length) {
-                                    const hit = hitTestResults[0];
-                                    const pose = hit.getPose(referenceSpace);
-
-                                    this.reticle.visible = true;
-                                    this.reticle.matrix.fromArray(pose.transform.matrix);
-                                } else {
-                                    this.reticle.visible = false;
-                                }
-                            }
-                        });
+                if (!hitTestSourceRequested) {
+                    const session = frame.session;
+                    session.requestReferenceSpace('viewer').then((referenceSpace) => {
+                        session.requestHitTestSource({ space: referenceSpace })
+                            .then((source) => {
+                                hitTestSource = source;
+                            });
                     });
 
-                    // Update controller interaction
-                    if (this.controller1.userData.selectedObject) {
-                        // Move object based on controller movement
-                        const object = this.controller1.userData.selectedObject;
-                        const controller = this.controller1;
-                        const delta = controller.position.clone()
-                            .sub(controller.userData.initialControllerPosition);
-                        object.position.copy(controller.userData.initialPosition).add(delta);
-                    }
+                    session.requestReferenceSpace('local').then((referenceSpace) => {
+                        this.renderer.xr.setReferenceSpace(referenceSpace);
+                    });
 
-                    if (this.controller2.userData.selectedObject) {
-                        // Move object based on controller movement
-                        const object = this.controller2.userData.selectedObject;
-                        const controller = this.controller2;
-                        const delta = controller.position.clone()
-                            .sub(controller.userData.initialControllerPosition);
-                        object.position.copy(controller.userData.initialPosition).add(delta);
+                    hitTestSourceRequested = true;
+                }
+
+                if (hitTestSource) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSource);
+                    if (hitTestResults.length) {
+                        const hit = hitTestResults[0];
+                        this.reticle.visible = true;
+                        this.reticle.matrix.fromArray(hit.getPose(this.renderer.xr.getReferenceSpace()).transform.matrix);
+                    } else {
+                        this.reticle.visible = false;
                     }
+                }
+
+                // Update controller interaction
+                if (this.controller1.userData.selectedObject) {
+                    const object = this.controller1.userData.selectedObject;
+                    const controller = this.controller1;
+                    const delta = controller.position.clone()
+                        .sub(controller.userData.initialControllerPosition);
+                    object.position.copy(controller.userData.initialPosition).add(delta);
+                }
+
+                if (this.controller2.userData.selectedObject) {
+                    const object = this.controller2.userData.selectedObject;
+                    const controller = this.controller2;
+                    const delta = controller.position.clone()
+                        .sub(controller.userData.initialControllerPosition);
+                    object.position.copy(controller.userData.initialPosition).add(delta);
                 }
             }
 
