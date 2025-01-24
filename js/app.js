@@ -3,17 +3,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DragControls } from 'three/addons/controls/DragControls.js';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
 class App {
     constructor() {
         this.loadedModels = new Map();
         this.draggableObjects = [];
         this.isARMode = false;
-        this.selectedObject = null;
-        this.controllers = [];
-        this.controllerGrips = [];
-        this.hasPlacedModel = false;
 
         this.init();
         this.setupScene();
@@ -21,7 +16,6 @@ class App {
         this.setupInitialControls();
         this.setupFileUpload();
         this.setupARButton();
-        this.setupARTouchControls();
         this.animate();
     }
 
@@ -58,89 +52,6 @@ class App {
 
     setupScene() {
         this.scene.background = new THREE.Color(0xcccccc);
-
-        const rgbeLoader = new RGBELoader();
-        rgbeLoader.load('https://raw.githubusercontent.com/kool-ltd/product-viewer/main/assets/brown_photostudio_02_4k.hdr', (texture) => {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            this.scene.environment = texture;
-            
-            this.renderer.physicallyCorrectLights = true;
-            this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            this.renderer.toneMappingExposure = 0.7;
-            this.renderer.outputEncoding = THREE.sRGBEncoding;
-        });
-    }
-
-    setupARButton() {
-        if ('xr' in navigator) {
-            const arButton = ARButton.createButton(this.renderer, {
-                requiredFeatures: ['hit-test'],
-                optionalFeatures: ['dom-overlay'],
-                domOverlay: { root: document.body }
-            });
-            document.body.appendChild(arButton);
-
-            this.setupControllers();
-
-            const geometry = new THREE.RingGeometry(0.15, 0.2, 32);
-            const material = new THREE.MeshBasicMaterial({ 
-                color: 0x00ff00,
-                opacity: 0.8,
-                transparent: true,
-                side: THREE.DoubleSide
-            });
-            this.reticle = new THREE.Mesh(geometry, material);
-            this.reticle.matrixAutoUpdate = false;
-            this.reticle.visible = false;
-            this.reticle.rotateX(-Math.PI / 2);
-            this.scene.add(this.reticle);
-
-            this.renderer.xr.addEventListener('sessionstart', () => {
-                this.isARMode = true;
-                this.scene.background = null;
-                this.hasPlacedModel = false;
-                
-                this.loadedModels.forEach(model => {
-                    model.visible = false;
-                });
-            });
-
-            this.renderer.xr.addEventListener('sessionend', () => {
-                this.isARMode = false;
-                this.scene.background = new THREE.Color(0xcccccc);
-                this.hasPlacedModel = false;
-                this.loadedModels.forEach(model => {
-                    model.visible = true;
-                });
-            });
-        }
-    }
-
-    setupControllers() {
-        this.controller1 = this.renderer.xr.getController(0);
-        this.controller1.addEventListener('selectstart', () => this.onControllerSelectStart(this.controller1));
-        this.controller1.addEventListener('selectend', () => this.onControllerSelectEnd(this.controller1));
-        this.scene.add(this.controller1);
-
-        this.controller2 = this.renderer.xr.getController(1);
-        this.controller2.addEventListener('selectstart', () => this.onControllerSelectStart(this.controller2));
-        this.controller2.addEventListener('selectend', () => this.onControllerSelectEnd(this.controller2));
-        this.scene.add(this.controller2);
-
-        const controllerGeometry = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, 0, -1)
-        ]);
-
-        const controllerMaterial = new THREE.LineBasicMaterial({
-            color: 0xffffff
-        });
-
-        const controllerLine = new THREE.Line(controllerGeometry, controllerMaterial);
-        controllerLine.scale.z = 5;
-
-        this.controller1.add(controllerLine.clone());
-        this.controller2.add(controllerLine.clone());
     }
 
     setupLights() {
@@ -152,7 +63,7 @@ class App {
         this.scene.add(directionalLight);
     }
 
-setupInitialControls() {
+    setupInitialControls() {
         this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
         this.orbitControls.enableDamping = true;
         this.orbitControls.dampingFactor = 0.05;
@@ -171,103 +82,23 @@ setupInitialControls() {
         });
     }
 
-    setupARTouchControls() {
-        let startX, startY;
-        let isRotating = false;
-        let isMoving = false;
+    setupARButton() {
+        if ('xr' in navigator) {
+            const arButton = ARButton.createButton(this.renderer, {
+                requiredFeatures: ['hit-test'],
+                optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.body }
+            });
+            document.body.appendChild(arButton);
 
-        this.renderer.domElement.addEventListener('touchstart', (event) => {
-            if (!this.isARMode || !this.hasPlacedModel) return;
-            
-            if (event.touches.length === 1) {
-                startX = event.touches[0].pageX;
-                startY = event.touches[0].pageY;
-                isMoving = true;
-            } else if (event.touches.length === 2) {
-                isRotating = true;
-                isMoving = false;
-            }
-        });
-
-        this.renderer.domElement.addEventListener('touchmove', (event) => {
-            if (!this.isARMode || !this.hasPlacedModel) return;
-            
-            if (isMoving && event.touches.length === 1) {
-                const deltaX = (event.touches[0].pageX - startX) * 0.01;
-                const deltaY = (event.touches[0].pageY - startY) * 0.01;
-
-                this.loadedModels.forEach(model => {
-                    if (model.visible) {
-                        model.position.x += deltaX;
-                        model.position.z += deltaY;
-                    }
-                });
-
-                startX = event.touches[0].pageX;
-                startY = event.touches[0].pageY;
-            } else if (isRotating && event.touches.length === 2) {
-                const touch1 = event.touches[0];
-                const touch2 = event.touches[1];
-                const rotation = Math.atan2(
-                    touch2.pageY - touch1.pageY,
-                    touch2.pageX - touch1.pageX
-                );
-
-                this.loadedModels.forEach(model => {
-                    if (model.visible) {
-                        model.rotation.y = rotation;
-                    }
-                });
-            }
-        });
-
-        this.renderer.domElement.addEventListener('touchend', () => {
-            isMoving = false;
-            isRotating = false;
-        });
-    }
-
-    onControllerSelectStart(controller) {
-        if (this.isARMode && this.reticle.visible && !this.hasPlacedModel) {
-            const matrix = new THREE.Matrix4();
-            matrix.copyPosition(this.reticle.matrix);
-
-            const position = new THREE.Vector3();
-            this.reticle.getWorldPosition(position);
-            const distance = position.distanceTo(this.camera.position);
-            const scale = distance * 0.2; // Adjust this multiplier to change relative size
-
-            this.loadedModels.forEach(model => {
-                model.position.setFromMatrixPosition(this.reticle.matrix);
-                model.scale.set(scale, scale, scale);
-                model.visible = true;
+            this.renderer.xr.addEventListener('sessionstart', () => {
+                this.isARMode = true;
             });
 
-            this.hasPlacedModel = true;
-            this.reticle.visible = false;
+            this.renderer.xr.addEventListener('sessionend', () => {
+                this.isARMode = false;
+            });
         }
-
-        if (this.hasPlacedModel) {
-            const tempMatrix = new THREE.Matrix4();
-            tempMatrix.identity().extractRotation(controller.matrixWorld);
-
-            const raycaster = new THREE.Raycaster();
-            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-
-            const intersects = raycaster.intersectObjects(Array.from(this.loadedModels.values()), true);
-            
-            if (intersects.length > 0) {
-                this.selectedObject = intersects[0].object;
-                controller.userData.selectedObject = this.selectedObject;
-                controller.userData.initialPosition = this.selectedObject.position.clone();
-                controller.userData.initialControllerPosition = controller.position.clone();
-            }
-        }
-    }
-
-    onControllerSelectEnd(controller) {
-        controller.userData.selectedObject = null;
     }
 
     setupFileUpload() {
@@ -324,10 +155,6 @@ setupInitialControls() {
                 const model = gltf.scene;
                 model.userData.isDraggable = true;
                 this.draggableObjects.push(model);
-                
-                if (!this.isARMode) {
-                    model.scale.set(1, 1, 1);
-                }
                 
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
@@ -388,39 +215,7 @@ setupInitialControls() {
     }
 
     animate() {
-        let hitTestSourceRequested = false;
-        let hitTestSource = null;
-
-        this.renderer.setAnimationLoop((timestamp, frame) => {
-            if (this.isARMode && frame && !this.hasPlacedModel) {
-                if (!hitTestSourceRequested) {
-                    const session = frame.session;
-                    session.requestReferenceSpace('viewer').then((referenceSpace) => {
-                        session.requestHitTestSource({ space: referenceSpace })
-                            .then((source) => {
-                                hitTestSource = source;
-                            });
-                    });
-
-                    session.requestReferenceSpace('local').then((referenceSpace) => {
-                        this.renderer.xr.setReferenceSpace(referenceSpace);
-                    });
-
-                    hitTestSourceRequested = true;
-                }
-
-                if (hitTestSource) {
-                    const hitTestResults = frame.getHitTestResults(hitTestSource);
-                    if (hitTestResults.length) {
-                        const hit = hitTestResults[0];
-                        this.reticle.visible = true;
-                        this.reticle.matrix.fromArray(hit.getPose(this.renderer.xr.getReferenceSpace()).transform.matrix);
-                    } else {
-                        this.reticle.visible = false;
-                    }
-                }
-            }
-
+        this.renderer.setAnimationLoop(() => {
             if (this.isARMode) {
                 this.renderer.render(this.scene, this.camera);
             } else {
