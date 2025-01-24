@@ -10,6 +10,9 @@ class App {
         this.loadedModels = new Map();
         this.draggableObjects = [];
         this.isARMode = false;
+        this.selectedObject = null;
+        this.controllers = [];
+        this.controllerGrips = [];
 
         this.init();
         this.setupScene();
@@ -17,6 +20,7 @@ class App {
         this.setupInitialControls();
         this.setupFileUpload();
         this.setupARButton();
+        this.setupARTouchControls();
         this.animate();
     }
 
@@ -75,17 +79,96 @@ class App {
             });
             document.body.appendChild(arButton);
 
-            // Remove background when entering AR
+            // Setup controllers
+            this.setupControllers();
+
+            // Hit-test indicator
+            const geometry = new THREE.RingGeometry(0.15, 0.2, 32);
+            const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            this.reticle = new THREE.Mesh(geometry, material);
+            this.reticle.matrixAutoUpdate = false;
+            this.reticle.visible = false;
+            this.reticle.rotateX(-Math.PI / 2);
+            this.scene.add(this.reticle);
+
+            // Session start/end handlers
             this.renderer.xr.addEventListener('sessionstart', () => {
                 this.isARMode = true;
-                this.scene.background = null;  // Remove background in AR
+                this.scene.background = null;
+                this.loadedModels.forEach(model => {
+                    model.visible = false;
+                });
             });
 
-            // Restore background when exiting AR
             this.renderer.xr.addEventListener('sessionend', () => {
                 this.isARMode = false;
-                this.scene.background = new THREE.Color(0xcccccc);  // Restore gray background
+                this.scene.background = new THREE.Color(0xcccccc);
+                this.loadedModels.forEach(model => {
+                    model.visible = true;
+                });
             });
+        }
+    }
+
+    setupControllers() {
+        // Controller 1
+        this.controller1 = this.renderer.xr.getController(0);
+        this.controller1.addEventListener('selectstart', () => this.onControllerSelectStart(this.controller1));
+        this.controller1.addEventListener('selectend', () => this.onControllerSelectEnd(this.controller1));
+        this.scene.add(this.controller1);
+
+        // Controller 2
+        this.controller2 = this.renderer.xr.getController(1);
+        this.controller2.addEventListener('selectstart', () => this.onControllerSelectStart(this.controller2));
+        this.controller2.addEventListener('selectend', () => this.onControllerSelectEnd(this.controller2));
+        this.scene.add(this.controller2);
+
+        // Controller visual indicators
+        const controllerGeometry = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, -1)
+        ]);
+
+        const controllerMaterial = new THREE.LineBasicMaterial({
+            color: 0xffffff
+        });
+
+        const controllerLine = new THREE.Line(controllerGeometry, controllerMaterial);
+        controllerLine.scale.z = 5;
+
+        this.controller1.add(controllerLine.clone());
+        this.controller2.add(controllerLine.clone());
+    }
+
+    onControllerSelectStart(controller) {
+        if (this.reticle.visible) {
+            this.loadedModels.forEach(model => {
+                model.position.setFromMatrixPosition(this.reticle.matrix);
+                model.visible = true;
+            });
+        }
+
+        // Raycasting for object manipulation
+        const tempMatrix = new THREE.Matrix4();
+        tempMatrix.identity().extractRotation(controller.matrixWorld);
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+        raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+        const intersects = raycaster.intersectObjects(Array.from(this.loadedModels.values()), true);
+        
+        if (intersects.length > 0) {
+            this.selectedObject = intersects[0].object;
+            controller.userData.selectedObject = this.selectedObject;
+            controller.userData.initialPosition = this.selectedObject.position.clone();
+            controller.userData.initialControllerPosition = controller.position.clone();
+        }
+    }
+
+    onControllerSelectEnd(controller) {
+        if (controller.userData.selectedObject) {
+            controller.userData.selectedObject = null;
         }
     }
 
@@ -105,81 +188,6 @@ class App {
 
         this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
         this.setupControlsEventListeners();
-
-        // Add touch interaction for AR mode
-        this.renderer.domElement.addEventListener('touchstart', (event) => {
-            if (!this.isARMode) return;
-            
-            event.preventDefault();
-            
-            const touch = event.touches[0];
-            const mouse = new THREE.Vector2();
-            
-            // Convert touch coordinates to normalized device coordinates (-1 to +1)
-            mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-            
-            const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(mouse, this.camera);
-            
-            const intersects = raycaster.intersectObjects(this.draggableObjects, true);
-            
-            if (intersects.length > 0) {
-                const selectedObject = intersects[0].object;
-                let targetObject = selectedObject;
-                
-                // Find the root object (the loaded GLB)
-                while (targetObject.parent && targetObject.parent !== this.scene) {
-                    targetObject = targetObject.parent;
-                }
-                
-                // Store the selected object and its initial position
-                this.selectedObject = targetObject;
-                this.initialTouchX = touch.clientX;
-                this.initialTouchY = touch.clientY;
-                this.initialObjectPosition = targetObject.position.clone();
-            }
-        });
-
-        this.renderer.domElement.addEventListener('touchmove', (event) => {
-            if (!this.isARMode || !this.selectedObject) return;
-            
-            event.preventDefault();
-            
-            const touch = event.touches[0];
-            const deltaX = (touch.clientX - this.initialTouchX) * 0.01;
-            const deltaY = (touch.clientY - this.initialTouchY) * 0.01;
-            
-            // Move the object in the camera's plane
-            const cameraRight = new THREE.Vector3();
-            const cameraUp = new THREE.Vector3();
-            this.camera.getWorldDirection(cameraRight);
-            cameraRight.cross(this.camera.up).normalize();
-            cameraUp.copy(this.camera.up);
-            
-            this.selectedObject.position.copy(this.initialObjectPosition);
-            this.selectedObject.position.add(cameraRight.multiplyScalar(-deltaX));
-            this.selectedObject.position.add(cameraUp.multiplyScalar(-deltaY));
-        });
-
-        this.renderer.domElement.addEventListener('touchend', () => {
-            if (!this.isARMode) return;
-            this.selectedObject = null;
-        });
-    }
-
-    setupControlsEventListeners() {
-        this.dragControls.addEventListener('dragstart', () => {
-            if (!this.isARMode) {
-                this.orbitControls.enabled = false;
-            }
-        });
-
-        this.dragControls.addEventListener('dragend', () => {
-            if (!this.isARMode) {
-                this.orbitControls.enabled = true;
-            }
-        });
     }
 
     setupControlsEventListeners() {
@@ -189,6 +197,62 @@ class App {
 
         this.dragControls.addEventListener('dragend', () => {
             this.orbitControls.enabled = true;
+        });
+    }
+
+    setupARTouchControls() {
+        let startX, startY;
+        let isRotating = false;
+        let isMoving = false;
+
+        this.renderer.domElement.addEventListener('touchstart', (event) => {
+            if (!this.isARMode) return;
+            
+            if (event.touches.length === 1) {
+                startX = event.touches[0].pageX;
+                startY = event.touches[0].pageY;
+                isMoving = true;
+            } else if (event.touches.length === 2) {
+                isRotating = true;
+                isMoving = false;
+            }
+        });
+
+        this.renderer.domElement.addEventListener('touchmove', (event) => {
+            if (!this.isARMode) return;
+            
+            if (isMoving && event.touches.length === 1) {
+                const deltaX = (event.touches[0].pageX - startX) * 0.01;
+                const deltaY = (event.touches[0].pageY - startY) * 0.01;
+
+                this.loadedModels.forEach(model => {
+                    if (model.visible) {
+                        model.position.x += deltaX;
+                        model.position.z += deltaY;
+                    }
+                });
+
+                startX = event.touches[0].pageX;
+                startY = event.touches[0].pageY;
+            } else if (isRotating && event.touches.length === 2) {
+                const touch1 = event.touches[0];
+                const touch2 = event.touches[1];
+                const rotation = Math.atan2(
+                    touch2.pageY - touch1.pageY,
+                    touch2.pageX - touch1.pageX
+                );
+
+                this.loadedModels.forEach(model => {
+                    if (model.visible) {
+                        model.rotation.y = rotation;
+                    }
+                });
+            }
+        });
+
+        this.renderer.domElement.addEventListener('touchend', () => {
+            isMoving = false;
+            isRotating = false;
         });
     }
 
@@ -306,7 +370,51 @@ class App {
     }
 
     animate() {
-        this.renderer.setAnimationLoop(() => {
+        this.renderer.setAnimationLoop((timestamp, frame) => {
+            if (this.isARMode && frame) {
+                const referenceSpace = this.renderer.xr.getReferenceSpace();
+                const session = this.renderer.xr.getSession();
+
+                if (session) {
+                    session.requestReferenceSpace('viewer').then((viewerSpace) => {
+                        session.requestHitTestSource({ space: viewerSpace }).then((hitTestSource) => {
+                            if (frame) {
+                                const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+                                if (hitTestResults.length) {
+                                    const hit = hitTestResults[0];
+                                    const pose = hit.getPose(referenceSpace);
+
+                                    this.reticle.visible = true;
+                                    this.reticle.matrix.fromArray(pose.transform.matrix);
+                                } else {
+                                    this.reticle.visible = false;
+                                }
+                            }
+                        });
+                    });
+
+                    // Update controller interaction
+                    if (this.controller1.userData.selectedObject) {
+                        // Move object based on controller movement
+                        const object = this.controller1.userData.selectedObject;
+                        const controller = this.controller1;
+                        const delta = controller.position.clone()
+                            .sub(controller.userData.initialControllerPosition);
+                        object.position.copy(controller.userData.initialPosition).add(delta);
+                    }
+
+                    if (this.controller2.userData.selectedObject) {
+                        // Move object based on controller movement
+                        const object = this.controller2.userData.selectedObject;
+                        const controller = this.controller2;
+                        const delta = controller.position.clone()
+                            .sub(controller.userData.initialControllerPosition);
+                        object.position.copy(controller.userData.initialPosition).add(delta);
+                    }
+                }
+            }
+
             if (this.isARMode) {
                 this.renderer.render(this.scene, this.camera);
             } else {
