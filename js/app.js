@@ -5,14 +5,13 @@ import { DragControls } from 'three/addons/controls/DragControls.js';
 
 class App {
     constructor() {
-        // Initialize collections first
         this.loadedModels = new Map();
         this.draggableObjects = [];
 
         this.init();
         this.setupScene();
         this.setupLights();
-        this.setupInitialControls(); // Renamed to indicate initial setup
+        this.setupInitialControls();
         this.animate();
     }
 
@@ -55,12 +54,10 @@ class App {
     }
 
     setupInitialControls() {
-        // Setup orbit controls
         this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
         this.orbitControls.enableDamping = true;
         this.orbitControls.dampingFactor = 0.05;
 
-        // Setup drag controls with empty array initially
         this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
         
         this.setupControlsEventListeners();
@@ -77,15 +74,12 @@ class App {
     }
 
     updateDragControls() {
-        // Update draggable objects array
         this.draggableObjects = Array.from(this.loadedModels.values());
         
-        // Dispose old drag controls
         if (this.dragControls) {
             this.dragControls.dispose();
         }
 
-        // Create new drag controls with updated objects
         this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
         this.setupControlsEventListeners();
     }
@@ -97,16 +91,17 @@ class App {
             (gltf) => {
                 const model = gltf.scene;
                 
-                // Center the model
-                const box = new THREE.Box3().setFromObject(model);
-                const center = box.getCenter(new THREE.Vector3());
-                model.position.sub(center);
-                
+                // Preserve original position
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
                 
                 // Update drag controls with new objects
                 this.updateDragControls();
+
+                // After all models are loaded, adjust camera to fit them
+                if (this.loadedModels.size === 4) {
+                    this.fitCameraToScene();
+                }
 
                 console.log(`Loaded model: ${name}`);
             },
@@ -117,6 +112,24 @@ class App {
                 console.error(`Error loading model ${name}:`, error);
             }
         );
+    }
+
+    fitCameraToScene() {
+        const box = new THREE.Box3().setFromObject(this.scene);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = this.camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / Math.tan(fov / 2));
+
+        // Add padding
+        cameraZ *= 1.5;
+
+        this.camera.position.set(0, 0, cameraZ);
+        this.orbitControls.target.copy(center);
+        this.camera.updateProjectionMatrix();
+        this.orbitControls.update();
     }
 
     loadDefaultModels() {
@@ -142,9 +155,7 @@ class App {
     }
 }
 
-// Create instance of the application
 const app = new App();
 app.loadDefaultModels();
 
-// Export the app instance if needed
 export default app;
