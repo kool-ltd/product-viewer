@@ -32,26 +32,70 @@ class App {
 
         this.renderer = new THREE.WebGLRenderer({ 
             antialias: true,
-            alpha: true // needed for AR
+            alpha: true
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.xr.enabled = true; // enable AR/VR
+        this.renderer.xr.enabled = true;
         this.container.appendChild(this.renderer.domElement);
 
-        window.addEventListener('resize', this.onWindowResize.bind(this));
+        // Bind the resize handler
+        this.onWindowResize = this.onWindowResize.bind(this);
+        window.addEventListener('resize', this.onWindowResize);
+    }
+
+    onWindowResize() {
+        if (this.camera && this.renderer) {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    }
+
+    setupScene() {
+        this.scene.background = new THREE.Color(0xcccccc);
+    }
+
+    setupLights() {
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 5, 5);
+        this.scene.add(directionalLight);
+    }
+
+    setupInitialControls() {
+        this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.orbitControls.enableDamping = true;
+        this.orbitControls.dampingFactor = 0.05;
+
+        this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
+        this.setupControlsEventListeners();
+    }
+
+    setupControlsEventListeners() {
+        this.dragControls.addEventListener('dragstart', () => {
+            this.orbitControls.enabled = false;
+        });
+
+        this.dragControls.addEventListener('dragend', () => {
+            this.orbitControls.enabled = true;
+        });
     }
 
     setupARButton() {
-        const arButton = ARButton.createButton(this.renderer, {
-            requiredFeatures: ['hit-test'],
-            optionalFeatures: ['dom-overlay'],
-        });
-        document.body.appendChild(arButton);
+        if ('xr' in navigator) {
+            const arButton = ARButton.createButton(this.renderer, {
+                requiredFeatures: ['hit-test'],
+                optionalFeatures: ['dom-overlay'],
+            });
+            document.body.appendChild(arButton);
 
-        arButton.addEventListener('click', () => {
-            this.isARMode = !this.isARMode;
-        });
+            arButton.addEventListener('click', () => {
+                this.isARMode = !this.isARMode;
+            });
+        }
     }
 
     setupFileUpload() {
@@ -93,15 +137,12 @@ class App {
             url, 
             (gltf) => {
                 const model = gltf.scene;
-                
-                // Make the entire model draggable as one unit
                 model.userData.isDraggable = true;
                 this.draggableObjects.push(model);
                 
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
                 
-                // Update drag controls with new objects
                 this.updateDragControls();
 
                 if (this.loadedModels.size === 4) {
@@ -119,8 +160,24 @@ class App {
         );
     }
 
+    fitCameraToScene() {
+        const box = new THREE.Box3().setFromObject(this.scene);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = this.camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / Math.tan(fov / 2));
+
+        cameraZ *= 1.5;
+
+        this.camera.position.set(0, 0, cameraZ);
+        this.orbitControls.target.copy(center);
+        this.camera.updateProjectionMatrix();
+        this.orbitControls.update();
+    }
+
     updateDragControls() {
-        // Only use the main models for dragging, not their children
         const draggableObjects = Array.from(this.loadedModels.values());
         
         if (this.dragControls) {
@@ -129,6 +186,19 @@ class App {
 
         this.dragControls = new DragControls(draggableObjects, this.camera, this.renderer.domElement);
         this.setupControlsEventListeners();
+    }
+
+    loadDefaultModels() {
+        const models = [
+            { url: './assets/kool-mandoline-blade.glb', name: 'blade' },
+            { url: './assets/kool-mandoline-frame.glb', name: 'frame' },
+            { url: './assets/kool-mandoline-handguard.glb', name: 'handguard' },
+            { url: './assets/kool-mandoline-handletpe.glb', name: 'handle' }
+        ];
+
+        models.forEach(model => {
+            this.loadModel(model.url, model.name);
+        });
     }
 
     animate() {
@@ -141,8 +211,6 @@ class App {
             }
         });
     }
-
-    // ... rest of the methods remain the same ...
 }
 
 const app = new App();
