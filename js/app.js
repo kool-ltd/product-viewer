@@ -153,9 +153,17 @@ class App {
             url, 
             (gltf) => {
                 const model = gltf.scene;
-                model.userData.isDraggable = true;
-                this.draggableObjects.push(model);
                 
+                // Make the entire model non-traversable for drag controls
+                model.traverse((child) => {
+                    child.userData.preventDrag = true;
+                });
+                
+                // Only the root model should be draggable
+                model.userData.isDraggable = true;
+                model.userData.preventDrag = false;
+                
+                this.draggableObjects.push(model);
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
                 
@@ -174,14 +182,43 @@ class App {
     }
 
     updateDragControls() {
-        const draggableObjects = Array.from(this.loadedModels.values());
-        
         if (this.dragControls) {
             this.dragControls.dispose();
         }
 
+        // Only use the main models for dragging
+        const draggableObjects = Array.from(this.loadedModels.values());
         this.dragControls = new DragControls(draggableObjects, this.camera, this.renderer.domElement);
+        
+        // Prevent dragging of child objects
+        this.dragControls.addEventListener('hoveron', (event) => {
+            if (event.object.userData.preventDrag) {
+                this.dragControls.enabled = false;
+            }
+        });
+
+        this.dragControls.addEventListener('hoveroff', () => {
+            this.dragControls.enabled = true;
+        });
+
         this.setupControlsEventListeners();
+    }
+
+    setupControlsEventListeners() {
+        this.dragControls.addEventListener('dragstart', () => {
+            this.orbitControls.enabled = false;
+        });
+
+        this.dragControls.addEventListener('dragend', () => {
+            this.orbitControls.enabled = true;
+        });
+
+        // Prevent drag if the object is a child
+        this.dragControls.addEventListener('drag', (event) => {
+            if (event.object.userData.preventDrag) {
+                event.preventDefault();
+            }
+        });
     }
 
     fitCameraToScene() {
