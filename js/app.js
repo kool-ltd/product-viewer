@@ -51,7 +51,31 @@ class App {
     }
 
     setupScene() {
+        // Start with gray background for normal viewing
         this.scene.background = new THREE.Color(0xcccccc);
+    }
+
+    setupARButton() {
+        if ('xr' in navigator) {
+            const arButton = ARButton.createButton(this.renderer, {
+                requiredFeatures: ['hit-test'],
+                optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.body }
+            });
+            document.body.appendChild(arButton);
+
+            // Remove background when entering AR
+            this.renderer.xr.addEventListener('sessionstart', () => {
+                this.isARMode = true;
+                this.scene.background = null;  // Remove background in AR
+            });
+
+            // Restore background when exiting AR
+            this.renderer.xr.addEventListener('sessionend', () => {
+                this.isARMode = false;
+                this.scene.background = new THREE.Color(0xcccccc);  // Restore gray background
+            });
+        }
     }
 
     setupLights() {
