@@ -44,12 +44,12 @@
     <!-- Scene container for Three.js rendering -->
     <div id="scene-container"></div>
 
-    <!-- Main script using ES Modules -->
+    <!-- Main script using ES Modules with CDN-based module imports -->
     <script type="module">
-      import * as THREE from 'three';
-      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-      import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-      import { ARButton } from 'three/addons/webxr/ARButton.js';
+      import * as THREE from 'https://cdn.skypack.dev/three@0.150.1';
+      import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/GLTFLoader.js';
+      import { RGBELoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/RGBELoader.js';
+      import { ARButton } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/webxr/ARButton.js';
 
       let scene, camera, renderer;
       const container = document.getElementById('scene-container');
