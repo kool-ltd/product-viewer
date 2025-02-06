@@ -26,7 +26,7 @@ class App {
         this.loadingManager.onProgress = (url, loaded, total) => {
             const loadingText = document.getElementById('loading-text');
             if (loadingText) {
-                loadingText.textContent = `Loading ${loaded} of ${total}`;
+                loadingText.textContent = `loading ${loaded} of ${total}`;
             }
         };
 
