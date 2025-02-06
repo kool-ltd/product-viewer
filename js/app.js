@@ -11,23 +11,105 @@ class App {
         this.draggableObjects = [];
         this.isARMode = false;
 
+        // Create a loading overlay on the page
+        this.createLoadingOverlay();
+
+        // Setup the loading manager. When all assets are loaded, call initAfterPreload.
+        this.loadingManager = new THREE.LoadingManager(() => {
+            // All assets have been loaded – hide the loading overlay and initialize the app.
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+            this.initAfterPreload();
+        });
+        this.loadingManager.onProgress = (url, loaded, total) => {
+            const loadingText = document.getElementById('loading-text');
+            if (loadingText) {
+                loadingText.textContent = `Loading ${loaded} of ${total}`;
+            }
+        };
+
+        // Create loaders with the loading manager
+        this.gltfLoader = new GLTFLoader(this.loadingManager);
+        this.rgbeLoader = new RGBELoader(this.loadingManager);
+
+        // Start preloading the assets
+        this.preloadAssets();
+    }
+
+    // -------------------------------------------------------------------------
+    // Preload Setup
+    // -------------------------------------------------------------------------
+    createLoadingOverlay() {
+        const overlay = document.createElement('div');
+        overlay.id = 'loading-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.8)';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+        overlay.style.zIndex = '9999';
+        overlay.innerHTML = `
+            <div id="loading-spinner" style="border: 16px solid #f3f3f3; border-top: 16px solid #3498db; border-radius: 50%; width: 120px; height: 120px; animation: spin 2s linear infinite;"></div>
+            <div id="loading-text" style="color: #fff; margin-top: 20px; font-size: 20px;">Loading...</div>
+        `;
+        document.body.appendChild(overlay);
+
+        // Inject CSS keyframes for the spinner animation.
+        const style = document.createElement('style');
+        style.textContent = `
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        `;
+        document.head.appendChild(style);
+    }
+
+    preloadAssets() {
+        // Preload the HDR environment map.
+        this.rgbeLoader.load('assets/brown_photostudio_02_4k.hdr', (texture) => {
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            this.preloadedEnvTexture = texture;
+        });
+
+        // Preload GLB models.
+        const models = [
+            { url: 'assets/kool-mandoline-blade.glb', name: 'blade' },
+            { url: 'assets/kool-mandoline-frame.glb', name: 'frame' },
+            { url: 'assets/kool-mandoline-handguard.glb', name: 'handguard' },
+            { url: 'assets/kool-mandoline-handletpe.glb', name: 'handle' }
+        ];
+
+        this.preloadedModels = {};
+        models.forEach(model => {
+            this.gltfLoader.load(model.url, (gltf) => {
+                this.preloadedModels[model.name] = gltf.scene;
+            });
+        });
+    }
+
+    initAfterPreload() {
+        // Call all the initialization functions after preloading is done.
         this.init();
         this.setupScene();
         this.setupLights();
         this.setupInitialControls();
-        this.setupFileUpload();
         this.setupARButton();
+        this.setupFileUpload();
+        this.loadPreloadedModels();
         this.animate();
     }
 
-    onWindowResize() {
-        if (this.camera && this.renderer) {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-    }
-
+    // -------------------------------------------------------------------------
+    // App Initial Setup: Scene, Camera, Renderer
+    // -------------------------------------------------------------------------
     init() {
         this.container = document.getElementById('scene-container');
         this.scene = new THREE.Scene();
@@ -51,40 +133,37 @@ class App {
         window.addEventListener('resize', this.onWindowResize.bind(this));
     }
 
+    onWindowResize() {
+        if (this.camera && this.renderer) {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Scene, Lights, and Environment
+    // -------------------------------------------------------------------------
     setupScene() {
         this.scene.background = new THREE.Color(0xcccccc);
 
-        const rgbeLoader = new RGBELoader();
-        rgbeLoader.load('https://raw.githubusercontent.com/kool-ltd/product-viewer/main/assets/brown_photostudio_02_4k.hdr', (texture) => {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            this.scene.environment = texture;
-            
+        // Use the preloaded HDR environment map if available.
+        if (this.preloadedEnvTexture) {
+            this.scene.environment = this.preloadedEnvTexture;
             this.renderer.physicallyCorrectLights = true;
             this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
             this.renderer.toneMappingExposure = 0.7;
             this.renderer.outputEncoding = THREE.sRGBEncoding;
-        });
-    }
-
-    setupARButton() {
-        if ('xr' in navigator) {
-            const arButton = ARButton.createButton(this.renderer, {
-                requiredFeatures: ['hit-test'],
-                optionalFeatures: ['dom-overlay'],
-                domOverlay: { root: document.body }
-            });
-            document.body.appendChild(arButton);
-
-            // Remove background when entering AR
-            this.renderer.xr.addEventListener('sessionstart', () => {
-                this.isARMode = true;
-                this.scene.background = null;  // Remove background in AR
-            });
-
-            // Restore background when exiting AR
-            this.renderer.xr.addEventListener('sessionend', () => {
-                this.isARMode = false;
-                this.scene.background = new THREE.Color(0xcccccc);  // Restore gray background
+        } else {
+            // Fallback: load HDR normally
+            const rgbeLoader = new RGBELoader();
+            rgbeLoader.load('assets/brown_photostudio_02_4k.hdr', (texture) => {
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+                this.scene.environment = texture;
+                this.renderer.physicallyCorrectLights = true;
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.toneMappingExposure = 0.7;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
             });
         }
     }
@@ -98,6 +177,9 @@ class App {
         this.scene.add(directionalLight);
     }
 
+    // -------------------------------------------------------------------------
+    // Controls and AR Setup
+    // -------------------------------------------------------------------------
     setupInitialControls() {
         this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
         this.orbitControls.enableDamping = true;
@@ -106,34 +188,25 @@ class App {
         this.dragControls = new DragControls(this.draggableObjects, this.camera, this.renderer.domElement);
         this.setupControlsEventListeners();
 
-        // Add touch interaction for AR mode
+        // Add touch interaction for AR mode.
         this.renderer.domElement.addEventListener('touchstart', (event) => {
             if (!this.isARMode) return;
             
             event.preventDefault();
-            
             const touch = event.touches[0];
             const mouse = new THREE.Vector2();
-            
-            // Convert touch coordinates to normalized device coordinates (-1 to +1)
             mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-            
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(mouse, this.camera);
-            
             const intersects = raycaster.intersectObjects(this.draggableObjects, true);
-            
             if (intersects.length > 0) {
                 const selectedObject = intersects[0].object;
                 let targetObject = selectedObject;
-                
-                // Find the root object (the loaded GLB)
+                // Find the root object
                 while (targetObject.parent && targetObject.parent !== this.scene) {
                     targetObject = targetObject.parent;
                 }
-                
-                // Store the selected object and its initial position
                 this.selectedObject = targetObject;
                 this.initialTouchX = touch.clientX;
                 this.initialTouchY = touch.clientY;
@@ -145,18 +218,14 @@ class App {
             if (!this.isARMode || !this.selectedObject) return;
             
             event.preventDefault();
-            
             const touch = event.touches[0];
             const deltaX = (touch.clientX - this.initialTouchX) * 0.01;
             const deltaY = (touch.clientY - this.initialTouchY) * 0.01;
-            
-            // Move the object in the camera's plane
             const cameraRight = new THREE.Vector3();
             const cameraUp = new THREE.Vector3();
             this.camera.getWorldDirection(cameraRight);
             cameraRight.cross(this.camera.up).normalize();
             cameraUp.copy(this.camera.up);
-            
             this.selectedObject.position.copy(this.initialObjectPosition);
             this.selectedObject.position.add(cameraRight.multiplyScalar(-deltaX));
             this.selectedObject.position.add(cameraUp.multiplyScalar(-deltaY));
@@ -170,28 +239,37 @@ class App {
 
     setupControlsEventListeners() {
         this.dragControls.addEventListener('dragstart', () => {
-            if (!this.isARMode) {
-                this.orbitControls.enabled = false;
-            }
-        });
-
-        this.dragControls.addEventListener('dragend', () => {
-            if (!this.isARMode) {
-                this.orbitControls.enabled = true;
-            }
-        });
-    }
-
-    setupControlsEventListeners() {
-        this.dragControls.addEventListener('dragstart', () => {
             this.orbitControls.enabled = false;
         });
-
         this.dragControls.addEventListener('dragend', () => {
             this.orbitControls.enabled = true;
         });
     }
 
+    setupARButton() {
+        if ('xr' in navigator) {
+            const arButton = ARButton.createButton(this.renderer, {
+                requiredFeatures: ['hit-test'],
+                optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.body }
+            });
+            document.body.appendChild(arButton);
+            // Remove background when entering AR.
+            this.renderer.xr.addEventListener('sessionstart', () => {
+                this.isARMode = true;
+                this.scene.background = null;
+            });
+            // Restore background when exiting AR.
+            this.renderer.xr.addEventListener('sessionend', () => {
+                this.isARMode = false;
+                this.scene.background = new THREE.Color(0xcccccc);
+            });
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // File Upload and Model Loading (for user-provided models)
+    // -------------------------------------------------------------------------
     setupFileUpload() {
         const uploadContainer = document.createElement('div');
         uploadContainer.style.position = 'fixed';
@@ -213,7 +291,6 @@ class App {
 
         fileInput.onchange = (event) => {
             this.clearExistingModels();
-            
             const files = event.target.files;
             for (let file of files) {
                 const url = URL.createObjectURL(file);
@@ -231,10 +308,8 @@ class App {
         this.loadedModels.forEach(model => {
             this.scene.remove(model);
         });
-        
         this.loadedModels.clear();
         this.draggableObjects.length = 0;
-        
         this.updateDragControls();
     }
 
@@ -246,17 +321,14 @@ class App {
                 const model = gltf.scene;
                 model.userData.isDraggable = true;
                 this.draggableObjects.push(model);
-                
                 this.scene.add(model);
                 this.loadedModels.set(name, model);
-                
                 this.updateDragControls();
                 this.fitCameraToScene();
-
                 console.log(`Loaded model: ${name}`);
             },
             (xhr) => {
-                console.log(`${name} ${(xhr.loaded / xhr.total * 100)}% loaded`);
+                console.log(`${name} ${(xhr.loaded / xhr.total * 100).toFixed(2)}% loaded`);
             },
             (error) => {
                 console.error(`Error loading model ${name}:`, error);
@@ -266,11 +338,9 @@ class App {
 
     updateDragControls() {
         const draggableObjects = Array.from(this.loadedModels.values());
-        
         if (this.dragControls) {
             this.dragControls.dispose();
         }
-
         this.dragControls = new DragControls(draggableObjects, this.camera, this.renderer.domElement);
         this.setupControlsEventListeners();
     }
@@ -279,19 +349,33 @@ class App {
         const box = new THREE.Box3().setFromObject(this.scene);
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
-
         const maxDim = Math.max(size.x, size.y, size.z);
         const fov = this.camera.fov * (Math.PI / 180);
         let cameraZ = Math.abs(maxDim / Math.tan(fov / 2));
-
         cameraZ *= 1.5;
-
         this.camera.position.set(0, 0, cameraZ);
         this.orbitControls.target.copy(center);
         this.camera.updateProjectionMatrix();
         this.orbitControls.update();
     }
 
+    // -------------------------------------------------------------------------
+    // Load Preloaded Models into the Scene
+    // -------------------------------------------------------------------------
+    loadPreloadedModels() {
+        for (const [name, model] of Object.entries(this.preloadedModels)) {
+            // Clone the model so that each instance is unique.
+            const modelClone = model.clone();
+            modelClone.userData.isDraggable = true;
+            this.draggableObjects.push(modelClone);
+            this.scene.add(modelClone);
+            this.loadedModels.set(name, modelClone);
+        }
+        this.updateDragControls();
+        this.fitCameraToScene();
+    }
+
+    // This method is kept for dynamic loading if needed.
     loadDefaultModels() {
         const models = [
             { url: './assets/kool-mandoline-blade.glb', name: 'blade' },
@@ -299,12 +383,14 @@ class App {
             { url: './assets/kool-mandoline-handguard.glb', name: 'handguard' },
             { url: './assets/kool-mandoline-handletpe.glb', name: 'handle' }
         ];
-
         models.forEach(model => {
             this.loadModel(model.url, model.name);
         });
     }
 
+    // -------------------------------------------------------------------------
+    // Animation Loop
+    // -------------------------------------------------------------------------
     animate() {
         this.renderer.setAnimationLoop(() => {
             if (this.isARMode) {
@@ -318,6 +404,4 @@ class App {
 }
 
 const app = new App();
-app.loadDefaultModels();
-
 export default app;
