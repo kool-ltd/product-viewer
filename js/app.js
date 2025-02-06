@@ -44,20 +44,28 @@ class App {
     createLoadingOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'loading-overlay';
+        // Use the same light gray background as the scene.
         overlay.style.position = 'fixed';
         overlay.style.top = '0';
         overlay.style.left = '0';
         overlay.style.width = '100%';
         overlay.style.height = '100%';
-        overlay.style.backgroundColor = 'rgba(0,0,0,0.8)';
+        overlay.style.backgroundColor = '#cccccc';
         overlay.style.display = 'flex';
         overlay.style.flexDirection = 'column';
         overlay.style.justifyContent = 'center';
         overlay.style.alignItems = 'center';
         overlay.style.zIndex = '9999';
         overlay.innerHTML = `
-            <div id="loading-spinner" style="border: 16px solid #f3f3f3; border-top: 16px solid #3498db; border-radius: 50%; width: 120px; height: 120px; animation: spin 2s linear infinite;"></div>
-            <div id="loading-text" style="color: #fff; margin-top: 20px; font-size: 20px;">Loading...</div>
+            <div id="loading-spinner" style="
+                border: 11px solid #f3f3f3; 
+                border-top: 11px solid #ff0000; 
+                border-radius: 50%; 
+                width: 84px; 
+                height: 84px; 
+                animation: spin 2s linear infinite;
+            "></div>
+            <div id="loading-text" style="color: #333; margin-top: 20px; font-size: 20px;">Loading...</div>
         `;
         document.body.appendChild(overlay);
 
