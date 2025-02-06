@@ -58,7 +58,7 @@ class App {
         overlay.style.zIndex = '9999';
         overlay.innerHTML = `
             <div id="loading-spinner" style="
-                border: 11px solid #fd00024; 
+                border: 11px solid #d00024; 
                 border-top: 11px solid #f3f3f3; 
                 border-radius: 50%; 
                 width: 84px; 
