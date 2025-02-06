@@ -58,14 +58,14 @@ class App {
         overlay.style.zIndex = '9999';
         overlay.innerHTML = `
             <div id="loading-spinner" style="
-                border: 11px solid #f3f3f3; 
-                border-top: 11px solid #ff0000; 
+                border: 11px solid #fd00024; 
+                border-top: 11px solid #3f3f3; 
                 border-radius: 50%; 
                 width: 84px; 
                 height: 84px; 
                 animation: spin 2s linear infinite;
             "></div>
-            <div id="loading-text" style="color: #333; margin-top: 20px; font-size: 20px;">Loading...</div>
+            <div id="loading-text" style="color: #333; margin-top: 20px; font-size: 14px; font-family: sans-serif;">loading...</div>
         `;
         document.body.appendChild(overlay);
 
