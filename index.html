@@ -1,166 +1,42 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>3D Model Viewer with AR</title>
     <style>
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-        height: 100%;
-      }
-      /* Container for the Three.js scene */
-      #scene-container {
-        width: 100vw;
-        height: 100vh;
-        position: relative;
-      }
-      /* Full-screen loading overlay */
-      #loading-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.8);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        font-size: 2em;
-        z-index: 9999;
-      }
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            overflow: hidden;
+        }
+        #scene-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
     </style>
-  </head>
-  <body>
-    <!-- Loading overlay shown until assets finish preloading -->
-    <div id="loading-overlay">Loading...</div>
-    <!-- Scene container for Three.js rendering -->
+</head>
+<body>
     <div id="scene-container"></div>
 
-    <!-- Main script using ES Modules with CDN-based module imports -->
-    <script type="module">
-      import * as THREE from 'https://cdn.skypack.dev/three@0.150.1';
-      import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/GLTFLoader.js';
-      import { RGBELoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/RGBELoader.js';
-      import { ARButton } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/webxr/ARButton.js';
-
-      let scene, camera, renderer;
-      const container = document.getElementById('scene-container');
-
-      // Adjust scene on window resize
-      function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      }
-
-      // Initialize the scene once assets are ready
-      function initScene(envMap, models) {
-        // Create scene and set environment
-        scene = new THREE.Scene();
-        scene.background = envMap;
-        scene.environment = envMap;
-
-        // Initialize camera
-        camera = new THREE.PerspectiveCamera(
-          45,
-          window.innerWidth / window.innerHeight,
-          0.1,
-          1000
-        );
-        camera.position.set(0, 1.6, 3);
-
-        // Initialize renderer
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        // Enable XR for AR support
-        renderer.xr.enabled = true;
-        container.appendChild(renderer.domElement);
-
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(5, 5, 5);
-        scene.add(directionalLight);
-
-        // Add each preloaded model to the scene
-        models.forEach((gltf) => {
-          const model = gltf.scene;
-          scene.add(model);
-        });
-
-        // Append the AR button to launch AR mode if available
-        document.body.appendChild(
-          ARButton.createButton(renderer, {
-            requiredFeatures: ['hit-test'],
-            optionalFeatures: ['dom-overlay'],
-            domOverlay: { root: document.body }
-          })
-        );
-
-        // Handle window resize events
-        window.addEventListener('resize', onWindowResize);
-      }
-
-      // Start animating the scene
-      function animate() {
-        renderer.setAnimationLoop(() => {
-          renderer.render(scene, camera);
-        });
-      }
-
-      // Preload all assets (environment HDR and GLTF models)
-      async function preloadAssets() {
-        // Load the HDR environment map using RGBELoader
-        const rgbeLoader = new RGBELoader();
-        const envMap = await rgbeLoader.loadAsync(
-          'assets/brown_photostudio_02_4k.hdr'
-        );
-
-        // Initialize GLTFLoader and define your model URLs
-        const gltfLoader = new GLTFLoader();
-        const modelUrls = [
-          'assets/kool-mandoline-blade.glb',
-          'assets/kool-mandoline-frame.glb',
-          'assets/kool-mandoline-handguard.glb',
-          'assets/kool-mandoline-handletpe.glb'
-        ];
-
-        // Map each model URL to its loading promise and wait for all to resolve
-        const modelPromises = modelUrls.map((url) => gltfLoader.loadAsync(url));
-        const models = await Promise.all(modelPromises);
-
-        return { envMap, models };
-      }
-
-      // Main function: preload assets, remove loader, then initialize scene and start animation
-      async function main() {
-        try {
-          const { envMap, models } = await preloadAssets();
-          // Remove the loading overlay once all assets are loaded
-          document.getElementById('loading-overlay').style.display = 'none';
-
-          // Initialize scene with preloaded assets and start animation
-          initScene(envMap, models);
-          animate();
-        } catch (error) {
-          console.error('Error during asset loading:', error);
-          document.getElementById('loading-overlay').textContent =
-            'Error Loading Content';
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
         }
-      }
-
-      // Start the application
-      main();
+    }
     </script>
-  </body>
+
+    <script type="module" src="./js/app.js"></script>
+</body>
 </html>
